@@ -1,0 +1,35 @@
+#!/usr/bin/env ruby
+require 'yaml'
+require_relative "../lib/afc"
+require 'zip-codes'
+abort "Need a yaml file as input argument" if ARGV.size == 0
+
+yaml_file = ARGV[0]
+csv_file = "unique_states.csv"
+orders = YAML::load_file(yaml_file)
+
+esoteric_zip = { "PR" => "Puerto Rico", "AE" => "US Military Mail(Europe)",  
+             "VI" => "US Virgin Island" }
+
+db = Hash.new(0) 
+orders.each do |order|
+  postal_code = order.postal_code.split('-')[0]
+  if(ZipCodes.identify(postal_code))
+    state = ZipCodes.identify(postal_code)[:state_name]
+    db[state] += order.amount
+  else
+    state = esoteric_zip[order.state] || "Unknown"
+    db[state] += order.amount
+  end
+end
+
+sorted_list = db.sort { |l, r| l[1] <=> r[1] }.reverse
+
+File.open(csv_file, "w") do |fh|
+  fh.puts "State, Amount"
+  sorted_list.each do |state, amount|
+    fh.puts "#{state},#{amount}"
+  end
+end
+
+

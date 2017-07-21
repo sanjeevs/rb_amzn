@@ -1,0 +1,79 @@
+#!/usr/bin/env ruby
+
+require_relative "../lib/afc"
+require 'yaml'
+require 'peddler'
+require 'mws-orders'
+require 'optparse'
+
+# Helper class
+class OrderDB
+  attr_reader :db
+
+  def initialize
+    @db = []
+  end
+
+  def update(orders)
+    shipped_orders = orders.select {|order| order.status == "Shipped"}
+    puts ">>Got #{shipped_orders.count} shipped orders from aws"
+
+    shipped_orders.each do |order|
+      shipping_address = order.shipping_address
+      order = Order.new(order.amazon_order_id,
+                        name: shipping_address.name.dup, 
+                        address: shipping_address.address_lines.join(' '),
+                        city: shipping_address.city,
+                        state: shipping_address.state_or_region,
+                        postal_code: shipping_address.postal_code,
+                        county_code: shipping_address.country_code,
+                        purchased_at: order.purchased_at.to_s.split(/ /)[0],
+                        amount: order.number_of_items_shipped,
+                        phone: shipping_address.phone)
+
+      @db << order
+    end
+  end
+end
+
+options = {}
+options[:output_file] = "orders.yaml"
+
+OptionParser.new do |opts|
+  opts.banner = "Usage: dump_orders [options]"
+
+  opts.on("-f", "--file filename", "Output YAML file to write out the matching orders") do |fh|
+    options[:output_file] = fh
+  end
+
+  opts.on("-h", "--help", "Print this help") do
+    puts opts
+    exit
+  end
+
+end.parse!
+
+client = MWS.orders
+
+order_db = OrderDB.new
+
+orders = client.list_orders(created_after: Date.today - 365).parse
+puts ">>Downloaded #{orders.count} orders from aws"
+
+order_db.update(orders)
+
+while orders.next_token do
+  orders = client.list_orders_by_next_token(orders.next_token).parse
+  puts ">>Downloaded #{orders.count} orders from aws"
+  order_db.update(orders)
+  sleep 300
+end
+
+puts ">>Final Total #{order_db.db.size} shipped orders in database"
+
+serialized_object = YAML::dump(order_db.db)
+
+File.open(options[:output_file], "w") do |fh|
+  fh.write(serialized_object)
+end
+

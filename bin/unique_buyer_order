@@ -1,0 +1,32 @@
+#!/usr/bin/env ruby
+require 'yaml'
+require_relative "../lib/afc"
+
+abort "Need a yaml file as input argument" if ARGV.size == 0
+
+yaml_file = ARGV[0]
+csv_file = "unique_buyers.csv"
+orders = YAML::load_file(yaml_file)
+
+db = {}
+orders.each do |order|
+  buyer = Buyer.new(name: order.name, 
+                    address: order.address,
+                    city: order.city,
+                    state: order.state,
+                    postal_code: order.postal_code,
+                    country_code: order.country_code)
+
+  db[buyer] = order.amount
+end
+
+sorted_list = db.sort { |l, r| l[1] <=> r[1] }.reverse
+
+File.open(csv_file, "w") do |fh|
+  fh.puts Buyer.csv_header
+  sorted_list.each do |buyer, amount|
+    fh.puts buyer.to_csv(amount)
+  end
+end
+
+
